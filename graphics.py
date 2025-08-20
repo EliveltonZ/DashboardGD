@@ -1,16 +1,19 @@
 import altair as alt
 import pandas as pd
 import streamlit as st
-import locale
+# import locale   # <- remova
+from babel.numbers import format_currency, format_decimal  # novo
 
 class Graph():
-
     def __init__(self, dataframe: pd.DataFrame):
-        self.df=dataframe
-        locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+        self.df = dataframe
+        # REMOVIDO: locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
 
-    def convert_value(self, number: float):
-        return locale.currency(number, symbol=True, grouping=True)
+    def convert_value(self, number: float, *, currency=False):
+        """Formata número em pt-BR. Se currency=True, formata como BRL."""
+        if currency:
+            return format_currency(number, "BRL", locale="pt_BR")
+        return format_decimal(number, locale="pt_BR")
 
     def dados(self, column: str, column_value: str, agg: str = 'count') -> pd.DataFrame:
         """

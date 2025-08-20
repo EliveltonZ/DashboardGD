@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 from graphics import Graph
 from Json import Settings
-import locale
+from babel.numbers import format_currency
 from supabase import create_client, Client
 
 def database(db_file=None, password=None) -> pd.DataFrame:
@@ -192,9 +192,8 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
 
         with col4:
             max_project = data_set.groupby('tipocontrato')[linha_y].sum().iloc[0]
-            locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-            numero_formatado = locale.currency(max_project, symbol=True, grouping=True)  
-            st.metric('Total de Faturamento no Periodo', numero_formatado)
+            numero_formatado = format_currency(max_project, "BRL", locale="pt_BR")
+            st.metric('Total de Faturamento no Período', numero_formatado)
 
     except IndexError as e:
         st.error("Não existem dados com base nos filtros selecionados")
