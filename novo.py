@@ -12,7 +12,6 @@ st.set_page_config(layout='wide',
                    }
                    )
 
-
 with st.sidebar:
     st.image('GD.png')
     selected = option_menu(
