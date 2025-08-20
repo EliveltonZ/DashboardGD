@@ -15,6 +15,7 @@ from database_media import df_media_intervalo
 # Conexão Supabase via SDK + RPC exec_sql(text)
 # =============================================================================
 
+
 @st.cache_resource(show_spinner=False)
 def get_client() -> Client:
     cfg = st.secrets["supabase"]  # precisa conter: url e anon_key (ou service_role_key)
