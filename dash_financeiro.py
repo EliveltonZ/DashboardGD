@@ -2,9 +2,7 @@ import pandas as pd
 import streamlit as st
 from graphics import Graph
 from Json import Settings
-import pyodbc
 import locale
-import os
 from supabase import create_client, Client
 
 def database(db_file=None, password=None) -> pd.DataFrame:
