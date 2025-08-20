@@ -1,9 +1,7 @@
 from typing import Literal
 import pandas as pd
 import streamlit as st
-import pyodbc  # mantido por compatibilidade, não é usado com Supabase
 from supabase import create_client, Client
-import os
 
 # @st.cache_data
 def database(db_file, query, password=None) -> pd.DataFrame:

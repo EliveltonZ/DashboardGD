@@ -5,8 +5,6 @@ import streamlit as st
 from datetime import datetime
 from typing import Literal
 from supabase import Client, create_client
-
-# Se você usa estes módulos locais, mantenha:
 from generator import Generator
 from database_media import df_media_intervalo
 
