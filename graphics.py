@@ -298,3 +298,39 @@ class Graph:
     def top_max_value(self, x: str, y: str, top: int):
         max_df = self.result.sort_values(by=y, ascending=False)
         return list(max_df.iloc[0:top][x])
+
+# ===== Detecção de tema (no principal) =====
+def detect_theme_mode() -> str:
+    """
+    Retorna 'dark' ou 'light'.
+    1) tenta via JS (prefers-color-scheme) usando streamlit-js-eval (se instalado)
+    2) fallback: calcula por theme.backgroundColor
+    3) padrão: 'light'
+    """
+    # 1) JavaScript tempo real (opcional)
+    try:
+        from streamlit_js_eval import streamlit_js_eval  # type: ignore
+        mode = streamlit_js_eval(
+            js_expressions="(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'",
+            key="__theme_mode__", want_output=True, default="light"
+        )
+        if mode in ("dark", "light"):
+            return mode
+    except Exception:
+        pass
+
+    # 2) Fallback pelo background do tema
+    bg = st.get_option("theme.backgroundColor")
+    if bg:
+        s = bg.lstrip("#")
+        if len(s) == 3:
+            s = "".join([c*2 for c in s])
+        try:
+            r, g, b = [int(s[i:i+2], 16) for i in (0, 2, 4)]
+            lum = 0.2126*(r/255)**2.2 + 0.7152*(g/255)**2.2 + 0.0722*(b/255)**2.2
+            return "light" if lum > 0.5 else "dark"
+        except Exception:
+            pass
+
+    # 3) Padrão seguro
+    return "light"

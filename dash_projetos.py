@@ -1,44 +1,8 @@
 import pandas as pd
 import streamlit as st
-from graphics import Graph
+from graphics import Graph, detect_theme_mode
 from Json import Settings
 from supabase import create_client, Client
-
-# ===== Detecção de tema (no principal) =====
-def detect_theme_mode() -> str:
-    """
-    Retorna 'dark' ou 'light'.
-    1) tenta via JS (prefers-color-scheme) usando streamlit-js-eval (se instalado)
-    2) fallback: calcula por theme.backgroundColor
-    3) padrão: 'light'
-    """
-    # 1) JavaScript tempo real (opcional)
-    try:
-        from streamlit_js_eval import streamlit_js_eval  # type: ignore
-        mode = streamlit_js_eval(
-            js_expressions="(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'",
-            key="__theme_mode__", want_output=True, default="light"
-        )
-        if mode in ("dark", "light"):
-            return mode
-    except Exception:
-        pass
-
-    # 2) Fallback pelo background do tema
-    bg = st.get_option("theme.backgroundColor")
-    if bg:
-        s = bg.lstrip("#")
-        if len(s) == 3:
-            s = "".join([c*2 for c in s])
-        try:
-            r, g, b = [int(s[i:i+2], 16) for i in (0, 2, 4)]
-            lum = 0.2126*(r/255)**2.2 + 0.7152*(g/255)**2.2 + 0.0722*(b/255)**2.2
-            return "light" if lum > 0.5 else "dark"
-        except Exception:
-            pass
-
-    # 3) Padrão seguro
-    return "light"
 
 
 # ==========================
@@ -182,8 +146,7 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
             raise IndexError
 
         # Detecta tema aqui (uma vez) e passa para todos os gráficos
-        theme_mode = detect_theme_mode()  # 'dark' | 'light'
-        st.write(theme_mode)
+        theme_mode = detect_theme_mode()
         col1, col2, col3, col4_ = st.columns(4)
         col5, col6 = st.columns(2)
         col7, col8, col9 = st.columns(3)
@@ -199,13 +162,13 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
         with col6:
             linha_x = 'vendedor'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'count', color2, linha_x, line_mean=True, label_theme=theme_mode)
+            t.bar(linha_x, linha_y, 'count', color2, linha_x.capitalize(), line_mean=True, label_theme=theme_mode)
             max_vendas = t.max_value(linha_x, linha_y)
 
         with col7:
             linha_x = 'liberador'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'count', color3, linha_x, line_mean=True, label_theme=theme_mode)
+            t.bar(linha_x, linha_y, 'count', color3, linha_x.capitalize(), line_mean=True, label_theme=theme_mode)
             max_liberador = t.max_value(linha_x, linha_y)
 
         with col8:

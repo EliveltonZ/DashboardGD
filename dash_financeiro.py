@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from graphics import Graph
+from graphics import Graph, detect_theme_mode
 from Json import Settings
 from babel.numbers import format_currency
 from supabase import create_client, Client
@@ -37,7 +37,7 @@ def database(db_file=None, password=None) -> pd.DataFrame:
     return df
 
 df = database()
-print(df)
+
 df['valornegociado'] = pd.to_numeric(df['valornegociado'], errors='coerce')
 
 def filtrar_por_data(df: pd.DataFrame, data_inicio, data_fim, vendedor = None, liberador = None, ambiente = None, loja = None) -> pd.DataFrame:
@@ -86,7 +86,7 @@ def metrica(message, list_itens):
     st.write(f"**{message}**")
     for i, ambiente in enumerate(list_itens):
         if i == 0:
-            st.metric('', f"{i+1} - {ambiente}")
+            st.metric('Ranking', f"{i+1} - {ambiente}", label_visibility="hidden")
         else:
             st.write(f"{i+1} - {ambiente}")
     st.write('')
@@ -147,6 +147,8 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
         data_set = filtrar_por_data(df, data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja)
         if data_set.empty:
             raise IndexError
+        
+        theme_mode = detect_theme_mode()
         col1, col2, col3, col4 = st.columns(4)
         col5, col6 = st.columns(2)
         col7, col8, col9 = st.columns(3)
@@ -156,19 +158,19 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
         with col5:
             linha_x = 'tipoambiente'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'sum', color1, 'Ambientes', orient='horizontal', nlargest=True)
+            t.bar(linha_x, linha_y, 'sum', color1, 'Ambientes', orient='horizontal', nlargest=True, label_theme=theme_mode)
             ambiente_max = t.top_max_value(linha_x, linha_y, 4)
 
         with col6:
             linha_x = 'vendedor'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'sum', color2, linha_x, orient='horizontal', nlargest=True)
+            t.bar(linha_x, linha_y, 'sum', color2, linha_x, orient='horizontal', nlargest=True, label_theme=theme_mode)
             max_vendas = t.top_max_value(linha_x, linha_y, 3)
 
         with col7:
             linha_x = 'liberador'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'sum', color3, linha_x, orient='horizontal', nlargest=True)
+            t.bar(linha_x, linha_y, 'sum', color3, linha_x, orient='horizontal', nlargest=True, label_theme=theme_mode)
             max_liberador = t.top_max_value(linha_x, linha_y, 3)
 
         with col8:
@@ -179,7 +181,7 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
         with col9:
             linha_x = 'MesAno'
             t = Graph(data_set)
-            t.area_gradient(linha_x, linha_y, 'sum', color4, 'Periodo', line_mean=True)
+            t.area_gradient(linha_x, linha_y, 'sum', color4, 'Periodo', line_mean=True, label_theme=theme_mode)
 
         with col1:
             metrica('Ambientes mais Vendidos', ambiente_max[0:3])
@@ -197,6 +199,3 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
 
     except IndexError as e:
         st.error("Não existem dados com base nos filtros selecionados")
-
-
-
