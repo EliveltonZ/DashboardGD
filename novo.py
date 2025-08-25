@@ -16,14 +16,10 @@ st.markdown(
     """
     <style>
     .block-container {
-        padding: 1.8rem 5rem; 
+        padding: 1.9rem 4rem; 
     }
 
     html {
-        zoom: 0.9;
-    }
-
-    [data-testid="stSidebar"] {
         zoom: 0.9;
     }
 
