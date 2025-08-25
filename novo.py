@@ -1,6 +1,6 @@
 import streamlit as st
 from streamlit_option_menu import option_menu
-
+from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(layout='wide',
                    page_title = "Dashboard",
@@ -12,7 +12,28 @@ st.set_page_config(layout='wide',
                    }
                    )
 
+st.markdown(
+    """
+    <style>
+    .block-container {
+        padding: 1.8rem 5rem; 
+    }
+
+    html {
+        zoom: 0.9;
+    }
+
+    [data-testid="stSidebar"] {
+        zoom: 0.9;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 with st.sidebar:
+
     st.image('GD.png')
     selected = option_menu(
         menu_title = "Dashboard",
