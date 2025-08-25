@@ -12,21 +12,6 @@ st.set_page_config(layout='wide',
                    }
                    )
 
-st.markdown(
-    """
-    <style>
-    .block-container {
-        padding: 1.9rem 4rem; 
-    }
-
-    [data-testid="stSidebar"] {
-        zoom: 0.85;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 with st.sidebar:
 
@@ -54,6 +39,7 @@ with st.sidebar:
         filtros = dash_financeiro.loading_json()
         t = dash_financeiro.create_sidebar(*filtros)
 
+
 if selected == "Projetos":
     dash_projetos.create_grafs(*t)
 
@@ -63,6 +49,7 @@ elif selected == "Produção":
 elif selected == "Financeiro":
     dash_financeiro.create_grafs(*t)
     
-    
+
+
 
 
