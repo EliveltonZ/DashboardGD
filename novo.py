@@ -19,8 +19,8 @@ st.markdown(
         padding: 1.9rem 4rem; 
     }
 
-    html {
-        zoom: 0.9;
+    [data-testid="stSidebar"] {
+        zoom: 0.85;
     }
 
     </style>
