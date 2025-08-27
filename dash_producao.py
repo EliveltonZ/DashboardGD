@@ -205,11 +205,12 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
     title_mapping = {col: col[1:] for col in status_columns}
 
     melted_df = df.melt(
-        id_vars=['ordemdecompra'],  # atenção: case igual ao SELECT
+        id_vars=['ordemdecompra'],
         value_vars=status_columns,
         var_name='Etapa',
         value_name='Status_Producao'
     )
+
     melted_df['Etapa_Titulo'] = melted_df['Etapa'].map(title_mapping)
 
     range_colors = ['red', '#2ca02c', '#B1AE03']
@@ -277,9 +278,10 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
         st.altair_chart(chart_clientes, use_container_width=True)
 
     with tab2:
+        tamanho = 130
         if 'Etapa' in df_media_intervalo:
             circle = alt.Chart(df_media_intervalo).mark_arc(
-                cornerRadius=10, innerRadius=120, outerRadius=200,
+                cornerRadius=10, innerRadius=tamanho*0.53, outerRadius=tamanho,
                 stroke="rgba(255, 255, 255, 0.2)", strokeWidth=5
             ).encode(
                 theta=alt.Theta(field='Percentual', type='quantitative', stack=True),
@@ -287,7 +289,7 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
                 tooltip=[alt.Tooltip(field="Etapa", type="nominal"),
                          alt.Tooltip(field="Media", type="nominal")]
             )
-            label = circle.mark_text(radius=230, size=13).encode(text='%').properties(width=600, height=500)
+            label = circle.mark_text(radius=tamanho+20, size=13).encode(text='%').properties()
             st.altair_chart(circle + label, use_container_width=True)  # type: ignore
         else:
             st.error("A coluna 'Etapa' não existe no DataFrame df_media_intervalo.")
