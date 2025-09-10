@@ -109,7 +109,7 @@ def decimal_to_hours(decimal_hours):
     return f"{hours:02d}:{minutes:02d}"
 
 # Ler dados (agora do Supabase)
-df = database('\\\\GDD02\\sistema\\BD_Geracao.accdb', sql, '1')
+df = database('\\\\GDD02\\sistema\\BD_Geracao.accdb', sql)
 
 def filtrar(df:pd.DataFrame, inicio: str, fim: str):
     # garante comparação em datetime

@@ -158,19 +158,19 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
         with col5:
             linha_x = 'tipoambiente'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'sum', color1, 'Ambientes', orient='horizontal', nlargest=True, label_theme=theme_mode)
+            t.bar(linha_x, linha_y, 'sum', color1, 'ambientes'.capitalize(), orient='horizontal', nlargest=True, label_theme=theme_mode)
             ambiente_max = t.top_max_value(linha_x, linha_y, 4)
 
         with col6:
             linha_x = 'vendedor'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'sum', color2, linha_x, orient='horizontal', nlargest=True, label_theme=theme_mode)
+            t.bar(linha_x, linha_y, 'sum', color2, linha_x.capitalize(), orient='horizontal', nlargest=True, label_theme=theme_mode)
             max_vendas = t.top_max_value(linha_x, linha_y, 3)
 
         with col7:
             linha_x = 'liberador'
             t = Graph(data_set)
-            t.bar(linha_x, linha_y, 'sum', color3, linha_x, orient='horizontal', nlargest=True, label_theme=theme_mode)
+            t.bar(linha_x, linha_y, 'sum', color3, linha_x.capitalize(), orient='horizontal', nlargest=True, label_theme=theme_mode)
             max_liberador = t.top_max_value(linha_x, linha_y, 3)
 
         with col8:
