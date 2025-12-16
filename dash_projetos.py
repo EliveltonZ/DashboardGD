@@ -8,7 +8,7 @@ from supabase import create_client, Client
 # ==========================
 # Fonte de dados (Supabase)
 # ==========================
-def database(db_file=None, password=None) -> pd.DataFrame:
+def database() -> pd.DataFrame:
     sb = st.secrets.get("supabase", {})
     url = sb.get("url")
     key = sb.get("key")
@@ -200,9 +200,8 @@ def create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fambiente, floja,
 # ==========================
 # App
 # ==========================
-def main():
+def main(data_inicial, data_final, cor_ambiente, cor_vendedor, cor_liberador, cor_periodo):
     st.title("Dashboard de Projetos")
-    data_inicial, data_final, cor_ambiente, cor_vendedor, cor_liberador, cor_periodo = loading_json()
     ret = create_sidebar(data_inicial, data_final, cor_ambiente, cor_vendedor, cor_liberador, cor_periodo)
     if ret:
         (data_inicio, data_fim, fVendedor, fLiberador, fAmbiente, floja,
@@ -211,5 +210,7 @@ def main():
         create_grafs(data_inicio, data_fim, fVendedor, fLiberador, fAmbiente, floja,
                      color1, color2, color3, color4)
 
+data_inicial, data_final, cor_ambiente, cor_vendedor, cor_liberador, cor_periodo = loading_json()
+
 if __name__ == "__main__":
-    main()
+    main(data_inicial, data_final, cor_ambiente, cor_vendedor, cor_liberador, cor_periodo)

@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Literal
 from supabase import Client, create_client
 from generator import Generator
-from database_media import df_media_intervalo
 
 # =============================================================================
 # Conexão Supabase via SDK + RPC exec_sql(text)
@@ -279,6 +278,7 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
 
     with tab2:
         tamanho = 130
+        from database_media import df_media_intervalo
         if 'Etapa' in df_media_intervalo:
             circle = alt.Chart(df_media_intervalo).mark_arc(
                 cornerRadius=10, innerRadius=tamanho*0.53, outerRadius=tamanho,

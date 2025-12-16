@@ -1,175 +1,249 @@
-from typing import Literal
+from typing import Literal, Tuple, Dict
 import pandas as pd
 import streamlit as st
 from supabase import create_client, Client
+from dash_projetos import data_inicial, data_final
+import logging
 
-# @st.cache_data
-def database(db_file, query, password=None) -> pd.DataFrame:
-    """
-    Lê dados do Supabase (Postgres) e retorna um DataFrame com as colunas necessárias.
-    Mantém o NOME e a ASSINATURA originais para não quebrar seu código.
-    Ignora db_file/query/password.
-    """
-    sb = st.secrets.get("supabase", {})
-    url = sb.get("url")
-    key = sb.get("key")
-    if not url or not key:
-        raise RuntimeError(
-            "Defina SUPABASE_URL e SUPABASE_KEY nas variáveis de ambiente."
+# -------------------------------------------------------------------
+# LOGGING BÁSICO
+# -------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("[%(asctime)s] %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+
+# -------------------------------------------------------------------
+# SERVIÇO PRINCIPAL
+# -------------------------------------------------------------------
+class ProducaoService:
+    def __init__(self):
+        # Aqui você pode injetar configs depois, se quiser
+        self.cli = self._create_supabase_client()
+
+    # -------- SUPABASE --------
+    def _create_supabase_client(self) -> Client:
+        sb = st.secrets.get("supabase", {})
+        url = sb.get("url")
+        key = sb.get("key")
+
+        if not url or not key:
+            raise RuntimeError("Configure SUPABASE_URL e SUPABASE_KEY em st.secrets['supabase'].")
+
+        logger.info("Conectando ao Supabase...")
+        return create_client(url, key)
+
+    def load_raw_data(self) -> pd.DataFrame:
+        """Lê dados crus do Supabase e faz o JOIN."""
+        cols_proj = [
+            "ordemdecompra","cliente","contrato","datacontrato","dataassinatura",
+            "chegoufabrica","dataentrega","iniciado","pronto","entrega",
+            "valorbruto","valornegociado"
+        ]
+        cols_prod = [
+            "ordemdecompra",
+            "corteinicio","cortefim",
+            "customizacaoinicio","customizacaofim",
+            "coladeirainicio","coladeirafim",
+            "usinageminicio","usinagemfim",
+            "montageminicio","montagemfim",
+            "paineisinicio","paineisfim",
+            "embalageminicio","embalagemfim"
+        ]
+
+        logger.info("Buscando dados de tblProjetos e tblProducao...")
+        df_proj = pd.DataFrame(
+            self.cli.table("tblProjetos").select(",".join(cols_proj)).execute().data or []
+        )
+        df_prod = pd.DataFrame(
+            self.cli.table("tblProducao").select(",".join(cols_prod)).execute().data or []
         )
 
-    cli: Client = create_client(url, key)
+        if df_proj.empty or df_prod.empty:
+            logger.warning("Alguma das tabelas voltou vazia.")
+            return pd.DataFrame(columns=cols_proj + cols_prod[1:])
 
-    # Colunas necessárias do seu SELECT original
-    cols_proj = [
-        "ordemdecompra","cliente","contrato","datacontrato","dataassinatura",
-        "chegoufabrica","dataentrega","iniciado","pronto","entrega",
-        "valorbruto","valornegociado"
-    ]
-    cols_prod = [
-        "ordemdecompra",
-        "corteinicio","cortefim",
-        "customizacaoinicio","customizacaofim",
-        "coladeirainicio","coladeirafim",
-        "usinageminicio","usinagemfim",
-        "montageminicio","montagemfim",
-        "paineisinicio","paineisfim",
-        "embalageminicio","embalagemfim"
-    ]
+        df = df_prod.merge(df_proj, on="ordemdecompra", how="inner")
 
-    # Busca no Supabase (PostgREST). Ajuste nomes de colunas se na sua base estiverem diferentes.
-    sel_proj = ",".join(cols_proj)
-    sel_prod = ",".join(cols_prod)
+        # Mantém compatibilidade com 'OrdemdeCompra' se o restante do código usar
+        if "ordemdecompra" in df.columns and "OrdemdeCompra" not in df.columns:
+            df["OrdemdeCompra"] = df["ordemdecompra"]
 
-    res_proj = cli.table("tblProjetos").select(sel_proj).execute()
-    res_prod = cli.table("tblProducao").select(sel_prod).execute()
+        logger.info(f"Total de registros após JOIN: {len(df)}")
+        return df
 
-    df_proj = pd.DataFrame(res_proj.data or [])
-    df_prod = pd.DataFrame(res_prod.data or [])
+    # -------- TRANSFORMAÇÕES --------
+    def convert_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        cols_data = [
+            'corteinicio','cortefim',
+            'customizacaoinicio','customizacaofim',
+            'coladeirainicio','coladeirafim',
+            'usinageminicio','usinagemfim',
+            'montageminicio','montagemfim',
+            'paineisinicio','paineisfim',
+            'embalageminicio','embalagemfim',
+        ]
+        for col in cols_data:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+        return df
 
-    if df_proj.empty or df_prod.empty:
-        return pd.DataFrame(columns=cols_proj + cols_prod[1:])  # DataFrame vazio compatível
+    def filtrar_periodo(self, df: pd.DataFrame, inicio: str, fim: str) -> pd.DataFrame:
+        di = pd.to_datetime(inicio)
+        df_ = pd.to_datetime(fim)
+        mask = (
+            (pd.to_datetime(df["corteinicio"]) >= di) &
+            (pd.to_datetime(df["cortefim"])   <= df_)
+        )
+        df_filtrado = df[mask].copy()
+        logger.info(f"Registros após filtro de período: {len(df_filtrado)}")
+        return df_filtrado
 
-    # Join por OrdemdeCompra (INNER JOIN como no seu SQL)
-    df = df_prod.merge(df_proj, on="ordemdecompra", how="inner")
+    # -------- CÁLCULO DE DURAÇÃO --------
+    @staticmethod
+    def calcular_duracao_trabalhada(inicio, fim) -> float | Literal[0]:
+        hour_inicio = 7
+        min_inicio = 30
+        hour_final = 16
+        min_final = 30
 
-    return df
+        jornada_inicio = pd.Timestamp(1900, 1, 1, hour_inicio, min_inicio)
+        jornada_fim    = pd.Timestamp(1900, 1, 1, hour_final, min_final)
 
-sql = "SELECT tblProjetos.ordemdecompra, tblProjetos.cliente, tblProjetos.contrato, tblProjetos.datacontrato, tblProjetos.dataassinatura, tblProjetos.chegoufabrica, tblProjetos.dataentrega, tblProjetos.iniciado, tblProjetos.pronto, tblProjetos.entrega, tblProjetos.valorbruto, tblProjetos.valornegociado, tblProducao.corteinicio, tblProducao.cortefim, tblProducao.customizacaoinicio, tblProducao.customizacaofim, tblProducao.coladeirainicio, tblProducao.coladeirafim, tblProducao.usinageminicio, tblProducao.usinagemfim, tblProducao.montageminicio, tblProducao.montagemfim, tblProducao.paineisinicio, tblProducao.paineisfim, tblProducao.embalageminicio, tblProducao.embalagemfim FROM tblProducao INNER JOIN tblProjetos ON tblProducao.OrdemdeCompra = tblProjetos.OrdemdeCompra;"
+        def ajustar(data: pd.Timestamp):
+            if pd.isnull(data): return None
+            if data.weekday() >= 5: return None
+            if data.time() < jornada_inicio.time():
+                data = data.replace(hour=hour_inicio, minute=min_inicio)
+            elif data.time() > jornada_fim.time():
+                data = data.replace(hour=hour_final, minute=min_final)
+            return data
 
-# Função para calcular a duração trabalhada
-def calcular_duracao_trabalhada(inicio, fim) -> float | Literal[0]:
-    hour_inicio = 7
-    min_inicio = 30
+        inicio = ajustar(inicio)
+        fim    = ajustar(fim)
+        if not inicio or not fim:
+            return 0
 
-    hour_final = 16
-    min_final = 30
+        horas = 0
+        while inicio < fim:
+            if inicio.weekday() < 5:
+                fim_dia = inicio.replace(hour=hour_final, minute=min_final)
+                horas += (min(fim, fim_dia) - inicio).total_seconds() / 3600
+            inicio = (inicio + pd.DateOffset(days=1)).replace(
+                hour=hour_inicio, minute=min_inicio
+            )
+        return horas
 
-    # Definições de horário de trabalho
-    jornada_inicio = pd.Timestamp(year=1900, month=1, day=1, hour=hour_inicio, minute=min_inicio)
-    jornada_fim = pd.Timestamp(year=1900, month=1, day=1, hour=hour_final, minute=min_final)
-
-    def ajustar_data(data: pd.Timestamp) -> pd.Timestamp | None:
-        if pd.isnull(data):
+    @staticmethod
+    def decimal_to_hours(decimal_hours):
+        if pd.isna(decimal_hours):
             return None
-        if data.weekday() >= 5:  # sábado/domingo
-            return None
-        if data.time() < jornada_inicio.time():
-            data = data.replace(hour=hour_inicio, minute=min_inicio)
-        elif data.time() > jornada_fim.time():
-            data = data.replace(hour=hour_final, minute=min_final)
-        return data
+        hours = int(decimal_hours)
+        minutes = int((decimal_hours - hours) * 60)
+        return f"{hours:02d}:{minutes:02d}"
 
-    inicio = ajustar_data(inicio)
-    fim = ajustar_data(fim)
+    def calcular_duracoes(self, df: pd.DataFrame) -> pd.DataFrame:
+        logger.info("Calculando duração trabalhada por etapa...")
+        df["DuraçãocorteHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.corteinicio, r.cortefim), axis=1
+        )
+        df["DuraçãocustomizacaoHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.customizacaoinicio, r.customizacaofim), axis=1
+        )
+        df["DuraçãocoladeiraHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.coladeirainicio, r.coladeirafim), axis=1
+        )
+        df["DuraçãousinagemHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.usinageminicio, r.usinagemfim), axis=1
+        )
+        df["DuraçãomontagemHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.montageminicio, r.montagemfim), axis=1
+        )
+        df["DuraçãopaineisHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.paineisinicio, r.paineisfim), axis=1
+        )
+        df["DuraçãoembalagemHoras"] = df.apply(
+            lambda r: self.calcular_duracao_trabalhada(r.embalageminicio, r.embalagemfim), axis=1
+        )
+        return df
 
-    if not inicio or not fim:
-        return 0
+    # -------- ESTATÍSTICAS --------
+    def calcular_estatisticas(self, df: pd.DataFrame):
+        total_projetos = df["ordemdecompra"].nunique() if "ordemdecompra" in df.columns else len(df)
 
-    horas_trabalhadas = 0
-    while inicio < fim:
-        if inicio.weekday() < 5:
-            if inicio.time() < jornada_inicio.time():
-                inicio = inicio.replace(hour=hour_inicio, minute=min_inicio)
-            if fim.time() > jornada_fim.time():
-                fim = fim.replace(hour=hour_final, minute=min_final)
-            if inicio < fim:
-                horas_no_dia = (min(fim, inicio.replace(hour=hour_final, minute=min_final)) - inicio).total_seconds() / 3600
-                horas_trabalhadas += horas_no_dia
-        inicio = inicio + pd.DateOffset(days=1)
-        inicio = inicio.replace(hour=hour_inicio, minute=min_inicio)
-    return horas_trabalhadas
+        def _safe_mean(series: pd.Series) -> float:
+            return series.sum() / total_projetos if total_projetos else 0.0
 
-# Passo 2: Definir a função decimal_to_hours
-def decimal_to_hours(decimal_hours):
-    if pd.isna(decimal_hours):
-        return None
-    hours = int(decimal_hours)
-    minutes = int((decimal_hours - hours) * 60)
-    return f"{hours:02d}:{minutes:02d}"
+        medias_dec = {
+            "corte":        _safe_mean(df["DuraçãocorteHoras"]),
+            "customizacao": _safe_mean(df["DuraçãocustomizacaoHoras"]),
+            "coladeira":    _safe_mean(df["DuraçãocoladeiraHoras"]),
+            "usinagem":     _safe_mean(df["DuraçãousinagemHoras"]),
+            "montagem":     _safe_mean(df["DuraçãomontagemHoras"]),
+            "paineis":      _safe_mean(df["DuraçãopaineisHoras"]),
+            "embalagem":    _safe_mean(df["DuraçãoembalagemHoras"]),
+        }
 
-# Ler dados (agora do Supabase)
-df = database('\\\\GDD02\\sistema\\BD_Geracao.accdb', sql)
+        medias_hhmm = {k: self.decimal_to_hours(v) for k, v in medias_dec.items()}
 
-def filtrar(df:pd.DataFrame, inicio: str, fim: str):
-    # garante comparação em datetime
-    di = pd.to_datetime(inicio)
-    df_ = pd.to_datetime(fim)
-    df_filtrado = df[(pd.to_datetime(df['corteinicio']) >= di) & (pd.to_datetime(df['cortefim']) <= df_)]
-    return df_filtrado
+        df_medias = pd.DataFrame(
+            {"Etapa": list(medias_dec.keys()),
+             "HorasDecimal": list(medias_dec.values())}
+        )
+        df_medias["Percentual"] = (
+            df_medias["HorasDecimal"] / df_medias["HorasDecimal"].sum() * 100
+        ).round(1)
+        df_medias["%"] = df_medias["Percentual"].astype(str) + "%"
+        df_medias["Media"] = df_medias["HorasDecimal"].apply(self.decimal_to_hours)
 
-# Converter colunas de datas/horas para datetime
-for col in [
-    'corteinicio','cortefim',
-    'customizacaoinicio','customizacaofim',
-    'coladeirainicio','coladeirafim',
-    'usinageminicio','usinagemfim',
-    'montageminicio','montagemfim',
-    'paineisinicio','paineisfim',
-    'embalageminicio','embalagemfim'
-]:
-    if col in df.columns:
-        df[col] = pd.to_datetime(df[col], errors='coerce')
+        logger.info("Estatísticas calculadas com sucesso.")
+        return df_medias, medias_dec, medias_hhmm
 
-df = filtrar(df, '2024-01-01', '2024-12-01')
+    # -------- PIPELINE COMPLETO --------
+    def run_pipeline(
+        self,
+        inicio: str,
+        fim: str,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict, Dict]:
+        """
+        Executa o fluxo completo com dados SEMPRE atualizados:
+        - lê Supabase
+        - converte datas
+        - filtra período
+        - calcula durações
+        - calcula estatísticas
+        """
+        df_raw = self.load_raw_data()
+        df_raw = self.convert_datetime_columns(df_raw)
+        df_filtrado = self.filtrar_periodo(df_raw, inicio, fim)
+        df_filtrado = self.calcular_duracoes(df_filtrado)
+        df_medias, medias_dec, medias_hhmm = self.calcular_estatisticas(df_filtrado)
+        return df_filtrado, df_medias, medias_dec, medias_hhmm
 
-# Calcular a duração trabalhada para cada fase
-df['DuraçãocorteHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['corteinicio'], row['cortefim']), axis=1)
-df['DuraçãocustomizacaoHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['customizacaoinicio'], row['customizacaofim']), axis=1)
-df['DuraçãocoladeiraHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['coladeirainicio'], row['coladeirafim']), axis=1)
-df['DuraçãousinagemHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['usinageminicio'], row['usinagemfim']), axis=1)
-df['DuraçãomontagemHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['montageminicio'], row['montagemfim']), axis=1)
-df['DuraçãopaineisHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['paineisinicio'], row['paineisfim']), axis=1)
-df['DuraçãoembalagemHoras'] = df.apply(lambda row: calcular_duracao_trabalhada(row['embalageminicio'], row['embalagemfim']), axis=1)
 
-total_projetos_periodo = df['OrdemdeCompra'].nunique() if 'OrdemdeCompra' in df.columns else len(df)
+def main():
+    st.title("Dashboard de Produção")
 
-# Calcular a média por etapa (em hh:mm e decimal)
-def _safe_mean(series: pd.Series, n: int) -> float:
-    return (series.sum() / n) if n else 0.0
+    service = ProducaoService()
 
-media_intervalo_duracoes = {
-    'corte':         decimal_to_hours(_safe_mean(df['DuraçãocorteHoras'], total_projetos_periodo)),
-    'customizacao':  decimal_to_hours(_safe_mean(df['DuraçãocustomizacaoHoras'], total_projetos_periodo)),
-    'coladeira':     decimal_to_hours(_safe_mean(df['DuraçãocoladeiraHoras'], total_projetos_periodo)),
-    'usinagem':      decimal_to_hours(_safe_mean(df['DuraçãousinagemHoras'], total_projetos_periodo)),
-    'montagem':      decimal_to_hours(_safe_mean(df['DuraçãomontagemHoras'], total_projetos_periodo)),
-    'paineis':       decimal_to_hours(_safe_mean(df['DuraçãopaineisHoras'], total_projetos_periodo)),
-    'embalagem':     decimal_to_hours(_safe_mean(df['DuraçãoembalagemHoras'], total_projetos_periodo)),
-}
+    # Exemplo usando as datas do módulo dash_projetos
+    df, df_medias, medias_dec, medias_hhmm = service.run_pipeline(
+        data_inicial, data_final
+    )
 
-media_intervalo_duracoes_teste = {
-    'corte':        _safe_mean(df['DuraçãocorteHoras'], total_projetos_periodo),
-    'customizacao': _safe_mean(df['DuraçãocustomizacaoHoras'], total_projetos_periodo),
-    'coladeira':    _safe_mean(df['DuraçãocoladeiraHoras'], total_projetos_periodo),
-    'usinagem':     _safe_mean(df['DuraçãousinagemHoras'], total_projetos_periodo),
-    'montagem':     _safe_mean(df['DuraçãomontagemHoras'], total_projetos_periodo),
-    'paineis':      _safe_mean(df['DuraçãopaineisHoras'], total_projetos_periodo),
-    'embalagem':    _safe_mean(df['DuraçãoembalagemHoras'], total_projetos_periodo),
-}
+    st.subheader("Dados filtrados")
+    st.dataframe(df)
 
-# Criar DataFrame de médias
-df_media_intervalo = pd.DataFrame(list(media_intervalo_duracoes_teste.items()), columns=['Etapa', 'HorasDecimal'])
-df_media_intervalo['Percentual'] = ((df_media_intervalo['HorasDecimal'] / df_media_intervalo['HorasDecimal'].sum()) * 100).round(1)
-df_media_intervalo['%'] = df_media_intervalo['Percentual'].astype(str) + '%'
-df_media_intervalo['Media'] = list(media_intervalo_duracoes.values())
+    st.subheader("Médias por etapa")
+    st.dataframe(df_medias)
+
+    st.write("Médias em decimal:", medias_dec)
+    st.write("Médias em hh:mm:", medias_hhmm)
+
+
+if __name__ == "__main__":
+    main()
