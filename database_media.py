@@ -234,6 +234,9 @@ def main():
     df, df_medias, medias_dec, medias_hhmm = service.run_pipeline(
         data_inicial, data_final
     )
+    print(service.run_pipeline(
+        data_inicial, data_final
+    ))
 
     st.subheader("Dados filtrados")
     st.dataframe(df)

@@ -2,15 +2,17 @@
 import pandas as pd
 import altair as alt
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Literal
 from supabase import Client, create_client
 from generator import Generator
 
+# ✅ NOVO: service que calcula df_medias
+from database_media import ProducaoService  # ajuste o nome do arquivo se for diferente
+
 # =============================================================================
 # Conexão Supabase via SDK + RPC exec_sql(text)
 # =============================================================================
-
 
 @st.cache_resource(show_spinner=False)
 def get_client() -> Client:
@@ -37,7 +39,6 @@ def _strip_leading_comments_spaces(s: str) -> str:
     return re.sub(r'^(?:--[^\n]*\n|\s+|/\*.*?\*/)+', '', s, flags=re.S)
 
 def _trim_trailing_semicolons(sql: str) -> str:
-    # remove ; finais (um ou mais) + espaços
     return sql.rstrip().rstrip(';').rstrip()
 
 def _force_select_prefix(sql: str) -> str:
@@ -52,20 +53,22 @@ def _force_select_prefix(sql: str) -> str:
 
 def database(query: str, params: dict | None = None) -> pd.DataFrame:
     client = get_client()
-    # 1) aplica parâmetros
     query = _bind_params(query, params)
-    # 2) remove ; finais
     query = _trim_trailing_semicolons(query)
-    # 3) se começar com WITH, embrulha
     query = _force_select_prefix(query)
-
-    # (opcional) debug:
-    # st.write("SQL executado:", query)
 
     resp = client.rpc("exec_sql", {"q": query}).execute()
     rows = resp.data or []
     norm = [r.get("exec_sql", r) for r in rows]
     return pd.DataFrame(norm)
+
+# =============================================================================
+# ✅ NOVO: cache do service
+# =============================================================================
+
+@st.cache_resource(show_spinner=False)
+def get_producao_service() -> ProducaoService:
+    return ProducaoService()
 
 # =============================================================================
 # Utils
@@ -89,9 +92,9 @@ def cell_color(val, lista: list) -> Literal['color: yellow', 'color: red', '']:
         return ''
 
 def check_date(date_str) -> bool:
-    date = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S") 
+    date_parsed = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
     hoje = datetime.today().replace(microsecond=0)
-    return date < hoje
+    return date_parsed < hoje
 
 # =============================================================================
 # SQL helpers
@@ -114,7 +117,6 @@ END
 """
 
 def etapa_case(prefixo: str) -> str:
-    # prefixo: "Corte", "Customizacao", "Coladeira", "Usinagem", "Paineis", "Montagem", "Embalagem"
     return f"""
     CASE 
       WHEN pr."{prefixo}fim" IS NOT NULL THEN 'FINALIZADO'
@@ -131,6 +133,13 @@ def create_sidebar():
     with st.sidebar:
         with st.form("my_form1"):
             fProjecao = st.date_input('Projeção', format='DD/MM/YYYY')
+
+            # ✅ NOVO: período usado na aba "Estatistica"
+            st.markdown("### Período (Estatística)")
+            default_ini = date.today() - timedelta(days=30)
+            default_fim = date.today()
+            fIni = st.date_input("Início", value=default_ini, format='DD/MM/YYYY')
+            fFim = st.date_input("Fim", value=default_fim, format='DD/MM/YYYY')
 
             query = f"""
             WITH dados AS (
@@ -186,13 +195,14 @@ def create_sidebar():
             t1, t2, t3 = st.columns(3)
             with t2:
                 submit_button = st.form_submit_button('Filtrar')
-                return fOption, df, None, fProjecao
+                # ✅ retorna também fIni e fFim
+                return fOption, df, None, fProjecao, fIni, fFim
             with t1:
                 pass
             with t3:
                 pass
 
-def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
+def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
     if df is None or df.empty:
         st.warning("Sem dados para exibir.")
         return
@@ -218,7 +228,7 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
 
     with tab1:
         bars = alt.Chart(melted_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('Etapa_Titulo:N', sort=status_columns),
+            x=alt.X('Etapa_Titulo:N'),
             y=alt.Y('count()', type='quantitative'),
             color=alt.Color(field='Status_Producao', type='nominal').scale(range=range_colors)
         ).properties(title='Status de Produção por Etapa', width=600, height=400)
@@ -276,11 +286,18 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
 
         st.altair_chart(chart_clientes, use_container_width=True)
 
+    # ✅ TAB2 MODIFICADA: usa ProducaoService -> df_medias
     with tab2:
         tamanho = 130
-        from database_media import df_media_intervalo
-        if 'Etapa' in df_media_intervalo:
-            circle = alt.Chart(df_media_intervalo).mark_arc(
+
+        service = get_producao_service()
+        inicio_iso = getattr(fIni, "isoformat", lambda: str(fIni))()
+        fim_iso = getattr(fFim, "isoformat", lambda: str(fFim))()
+
+        df_filtrado, df_medias, medias_dec, medias_hhmm = service.run_pipeline(inicio_iso, fim_iso)
+
+        if not df_medias.empty and "Etapa" in df_medias.columns:
+            circle = alt.Chart(df_medias).mark_arc(
                 cornerRadius=10, innerRadius=tamanho*0.53, outerRadius=tamanho,
                 stroke="rgba(255, 255, 255, 0.2)", strokeWidth=5
             ).encode(
@@ -292,7 +309,7 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
             label = circle.mark_text(radius=tamanho+20, size=13).encode(text='%').properties()
             st.altair_chart(circle + label, use_container_width=True)  # type: ignore
         else:
-            st.error("A coluna 'Etapa' não existe no DataFrame df_media_intervalo.")
+            st.warning("Sem dados para médias por etapa no período selecionado.")
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -399,11 +416,11 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
                                             subset=pd.IndexSlice[:, df_in.columns[6:20]])
             return styled_df
 
-        col_order = ['codcc', 'cliente', 'ambiente', 'contrato', 'Status', 'Prazo', 
-                    'corteinicio', 'cortefim', 'customizacaoinicio', 'customizacaofim',
-                   'coladeirainicio', 'coladeirafim', 'usinageminicio', 'usinagemfim',
-                   'montageminicio', 'montagemfim', 'paineisinicio', 'paineisfim',
-                   'embalageminicio', 'embalagemfim', 'urgente', 'dataentrega', 'previsao']
+        col_order = ['codcc', 'cliente', 'ambiente', 'contrato', 'Status', 'Prazo',
+                     'corteinicio', 'cortefim', 'customizacaoinicio', 'customizacaofim',
+                     'coladeirainicio', 'coladeirafim', 'usinageminicio', 'usinagemfim',
+                     'montageminicio', 'montagemfim', 'paineisinicio', 'paineisfim',
+                     'embalageminicio', 'embalagemfim', 'urgente', 'dataentrega', 'previsao']
         dfp = dfp[col_order]
         df2_styled = create_df_filled(dfp)
         st.dataframe(df2_styled)
@@ -414,5 +431,5 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao):
 
 if __name__ == '__main__':
     st.set_page_config(page_title="Produção", layout="wide")
-    fOption, df, _, fProjecao = create_sidebar()
-    create_grafs(fOption, df, None, fProjecao)
+    fOption, df, _, fProjecao, fIni, fFim = create_sidebar()
+    create_grafs(fOption, df, None, fProjecao, fIni, fFim)
