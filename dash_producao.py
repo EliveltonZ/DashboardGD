@@ -212,15 +212,19 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
 
     status_columns = ['SCorte', 'SCustom', 'SColadeira', 'SPaineis', 'SUsinagem', 'SMontagem', 'SEmbalagem']
     title_mapping = {col: col[1:] for col in status_columns}
-
+    print(status_columns)
     melted_df = df.melt(
         id_vars=['ordemdecompra'],
-        value_vars=status_columns,
+        value_vars=title_mapping,
         var_name='Etapa',
         value_name='Status_Producao'
     )
 
     melted_df['Etapa_Titulo'] = melted_df['Etapa'].map(title_mapping)
+
+    order_map = {col: i for i, col in enumerate(status_columns)}
+    melted_df["Etapa_Ordem"] = melted_df["Etapa"].map(order_map)
+
 
     range_colors = ['red', '#2ca02c', '#B1AE03']
 
@@ -228,7 +232,7 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
 
     with tab1:
         bars = alt.Chart(melted_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('Etapa_Titulo:N'),
+            x=alt.X('Etapa_Titulo:N', sort=alt.SortField(field='Etapa_Ordem', order='ascending'),),
             y=alt.Y('count()', type='quantitative'),
             color=alt.Color(field='Status_Producao', type='nominal').scale(range=range_colors)
         ).properties(title='Status de Produção por Etapa', width=600, height=400)
@@ -274,31 +278,31 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
         with col3:
             st.altair_chart(chart2, use_container_width=True)
 
-        cliente_contrato = (
-            df.groupby("cliente", dropna=False)["contrato"]
-            .size()
-            .reset_index(name="ambientes")
-        )
+            cliente_contrato = (
+                df.groupby("cliente", dropna=False)["contrato"]
+                .size()
+                .reset_index(name="ambientes")
+            )
 
-        # ✅ Sanitiza tipos (isso evita crash do Altair no Cloud)
-        cliente_contrato["cliente"] = cliente_contrato["cliente"].fillna("SEM CLIENTE").astype(str)
-        cliente_contrato["ambientes"] = pd.to_numeric(cliente_contrato["ambientes"], errors="coerce").fillna(0).astype(int)
+            # ✅ Sanitiza tipos (isso evita crash do Altair no Cloud)
+            cliente_contrato["cliente"] = cliente_contrato["cliente"].fillna("SEM CLIENTE").astype(str)
+            cliente_contrato["ambientes"] = pd.to_numeric(cliente_contrato["ambientes"], errors="coerce").fillna(0).astype(int)
 
-        # Se ficar vazio, não tenta plotar
-        if cliente_contrato.empty:
-            st.warning("Sem dados para o gráfico de clientes.")
-        else:
-            chart_clientes = alt.Chart(cliente_contrato).mark_bar().encode(
-                x=alt.X(
-                    "cliente:N",
-                    sort=alt.SortField(field="ambientes", order="descending"),
-                    title="Cliente",
-                ),
-                y=alt.Y("ambientes:Q", title="Ambientes"),
-                tooltip=[alt.Tooltip("cliente:N"), alt.Tooltip("ambientes:Q")],
-            ).properties(title="Número de ambientes por cliente")
+            # Se ficar vazio, não tenta plotar
+            if cliente_contrato.empty:
+                st.warning("Sem dados para o gráfico de clientes.")
+            else:
+                chart_clientes = alt.Chart(cliente_contrato).mark_bar().encode(
+                    x=alt.X(
+                        "cliente:N",
+                        sort=alt.SortField(field="ambientes", order="descending"),
+                        title="Cliente",
+                    ),
+                    y=alt.Y("ambientes:Q", title="Ambientes"),
+                    tooltip=[alt.Tooltip("cliente:N"), alt.Tooltip("ambientes:Q")],
+                ).properties(title="Número de ambientes por cliente")
 
-    st.altair_chart(chart_clientes, use_container_width=True)
+        st.altair_chart(chart_clientes, use_container_width=True)
 
 
     # ✅ TAB2 MODIFICADA: usa ProducaoService -> df_medias
