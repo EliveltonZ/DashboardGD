@@ -274,17 +274,32 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
         with col3:
             st.altair_chart(chart2, use_container_width=True)
 
-        cliente_contrato = df.groupby('cliente')['contrato'].count().reset_index()
-        cliente_contrato.columns = ['cliente', 'ambientes']
-        cliente_contrato = cliente_contrato.sort_values(by='ambientes', ascending=False)
+        cliente_contrato = (
+            df.groupby("cliente", dropna=False)["contrato"]
+            .size()
+            .reset_index(name="ambientes")
+        )
 
-        chart_clientes = alt.Chart(cliente_contrato).mark_bar().encode(
-            x=alt.X('cliente:N', sort='-y'),
-            y='ambientes:Q',
-            color='ambientes:Q'
-        ).properties(title='Número de ambientes por cliente')
+        # ✅ Sanitiza tipos (isso evita crash do Altair no Cloud)
+        cliente_contrato["cliente"] = cliente_contrato["cliente"].fillna("SEM CLIENTE").astype(str)
+        cliente_contrato["ambientes"] = pd.to_numeric(cliente_contrato["ambientes"], errors="coerce").fillna(0).astype(int)
 
-        st.altair_chart(chart_clientes, use_container_width=True)
+        # Se ficar vazio, não tenta plotar
+        if cliente_contrato.empty:
+            st.warning("Sem dados para o gráfico de clientes.")
+        else:
+            chart_clientes = alt.Chart(cliente_contrato).mark_bar().encode(
+                x=alt.X(
+                    "cliente:N",
+                    sort=alt.SortField(field="ambientes", order="descending"),
+                    title="Cliente",
+                ),
+                y=alt.Y("ambientes:Q", title="Ambientes"),
+                tooltip=[alt.Tooltip("cliente:N"), alt.Tooltip("ambientes:Q")],
+            ).properties(title="Número de ambientes por cliente")
+
+    st.altair_chart(chart_clientes, use_container_width=True)
+
 
     # ✅ TAB2 MODIFICADA: usa ProducaoService -> df_medias
     with tab2:
