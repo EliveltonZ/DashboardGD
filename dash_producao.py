@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 from typing import Literal
 from supabase import Client, create_client
 from generator import Generator
+from Json import Settings
 
 # ✅ NOVO: service que calcula df_medias
 from database_media import ProducaoService  # ajuste o nome do arquivo se for diferente
@@ -13,6 +14,12 @@ from database_media import ProducaoService  # ajuste o nome do arquivo se for di
 # =============================================================================
 # Conexão Supabase via SDK + RPC exec_sql(text)
 # =============================================================================
+
+def loading_json():
+    s = Settings()
+    data_inicial = s.key('data_inicial')
+    data_final = s.key('data_final')
+    return data_inicial, data_final
 
 @st.cache_resource(show_spinner=False)
 def get_client() -> Client:
@@ -136,8 +143,8 @@ def create_sidebar():
 
             # ✅ NOVO: período usado na aba "Estatistica"
             st.markdown("### Período (Estatística)")
-            default_ini = date.today() - timedelta(days=30)
-            default_fim = date.today()
+            
+            default_ini, default_fim = loading_json()
             fIni = st.date_input("Início", value=default_ini, format='DD/MM/YYYY')
             fFim = st.date_input("Fim", value=default_fim, format='DD/MM/YYYY')
 

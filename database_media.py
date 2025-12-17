@@ -172,7 +172,7 @@ class ProducaoService:
         return df
 
     # -------- ESTATÍSTICAS --------
-    def calcular_estatisticas(self, df: pd.DataFrame):
+    def calcular_estatisticas(self, df: pd.DataFrame) :
         total_projetos = df["ordemdecompra"].nunique() if "ordemdecompra" in df.columns else len(df)
 
         def _safe_mean(series: pd.Series) -> float:

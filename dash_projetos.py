@@ -38,7 +38,7 @@ df = database()
 # ==========================
 def filtrar_por_data(df: pd.DataFrame, data_inicio, data_fim,
                      vendedor=None, liberador=None, ambiente=None, loja=None) -> pd.DataFrame:
-    criterio = 'pronto'   # ou 'DataEntrega'
+    criterio = 'pronto'
     df = df.copy()
     df[criterio] = pd.to_datetime(df[criterio], errors='coerce')
     di = pd.to_datetime(data_inicio)
