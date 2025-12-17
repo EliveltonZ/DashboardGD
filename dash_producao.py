@@ -212,7 +212,6 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
 
     status_columns = ['SCorte', 'SCustom', 'SColadeira', 'SPaineis', 'SUsinagem', 'SMontagem', 'SEmbalagem']
     title_mapping = {col: col[1:] for col in status_columns}
-    print(status_columns)
     melted_df = df.melt(
         id_vars=['ordemdecompra'],
         value_vars=title_mapping,
@@ -226,7 +225,11 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
     melted_df["Etapa_Ordem"] = melted_df["Etapa"].map(order_map)
 
 
-    range_colors = ['red', '#2ca02c', '#B1AE03']
+    range_colors = {
+            'AGUARDE': "#F90303",
+            'INICIADO': '#B1AE03',
+            'FINALIZADO': '#2ca02c',
+        }
 
     tab1, tab2, tab3 = st.tabs(['Produção', 'Estatistica', 'Previsoes'])
 
@@ -234,7 +237,7 @@ def create_grafs(filter, df, _db_path_nao_usado, fProjecao, fIni, fFim):
         bars = alt.Chart(melted_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('Etapa_Titulo:N', sort=alt.SortField(field='Etapa_Ordem', order='ascending'),),
             y=alt.Y('count()', type='quantitative'),
-            color=alt.Color(field='Status_Producao', type='nominal').scale(range=range_colors)
+            color=alt.Color(field='Status_Producao', type='nominal', scale=alt.Scale(domain=list(range_colors.keys()), range=list(range_colors.values())))
         ).properties(title='Status de Produção por Etapa', width=600, height=400)
 
         col1, col2, col3 = st.columns(3)
