@@ -15,7 +15,7 @@ from database_media import ProducaoService  # ajuste o nome do arquivo se for di
 # Conexão Supabase via SDK + RPC exec_sql(text)
 # =============================================================================
 
-def loading_json():
+def loading_json() -> tuple[str, str]:
     s = Settings()
     data_inicial = s.key('data_inicial')
     data_final = s.key('data_final')
@@ -145,6 +145,7 @@ def create_sidebar():
             st.markdown("### Período (Estatística)")
             
             default_ini, default_fim = loading_json()
+            print(default_ini, default_fim)
             fIni = st.date_input("Início", value=default_ini, format='DD/MM/YYYY')
             fFim = st.date_input("Fim", value=default_fim, format='DD/MM/YYYY')
 
