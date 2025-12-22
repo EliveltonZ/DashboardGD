@@ -21,6 +21,8 @@ def loading_json() -> tuple[str, str]:
     data_final = s.key('data_final')
     return data_inicial, data_final
 
+default_ini, default_fim = loading_json()
+
 @st.cache_resource(show_spinner=False)
 def get_client() -> Client:
     cfg = st.secrets["supabase"]  # precisa conter: url e anon_key (ou service_role_key)
@@ -144,8 +146,6 @@ def create_sidebar():
             # ✅ NOVO: período usado na aba "Estatistica"
             st.markdown("### Período (Estatística)")
             
-            default_ini, default_fim = loading_json()
-            print(default_ini, default_fim)
             fIni = st.date_input("Início", value=default_ini, format='DD/MM/YYYY')
             fFim = st.date_input("Fim", value=default_fim, format='DD/MM/YYYY')
 
