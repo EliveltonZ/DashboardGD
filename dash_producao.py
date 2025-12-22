@@ -146,8 +146,8 @@ def create_sidebar():
             # ✅ NOVO: período usado na aba "Estatistica"
             st.markdown("### Período (Estatística)")
             
-            fIni = st.date_input("Início", value=default_ini, format='DD/MM/YYYY')
-            fFim = st.date_input("Fim", value=default_fim, format='DD/MM/YYYY')
+            fIni = st.date_input("Início", value=pd.to_datetime(default_ini), format='DD/MM/YYYY')
+            fFim = st.date_input("Fim", value=pd.to_datetime(default_fim), format='DD/MM/YYYY')
 
             query = f"""
             WITH dados AS (
