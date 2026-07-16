@@ -3,13 +3,16 @@ from typing import Dict, Tuple, Iterable, Optional
 
 BR_FMT = "%d/%m/%Y %H:%M:%S"
 
+
 def parse_dt(dt: str | datetime, fmt: str = BR_FMT) -> datetime:
     if isinstance(dt, datetime):
         return dt
     return datetime.strptime(dt, fmt)
 
+
 def format_dt(dt: datetime, fmt: str = BR_FMT) -> str:
     return dt.strftime(fmt)
+
 
 class Generator:
     def __init__(
@@ -17,12 +20,12 @@ class Generator:
         list_columns_initial: Optional[Iterable[str]] = None,
         work_start_h: int = 7, work_start_m: int = 30,
         work_end_h: int = 16, work_end_m: int = 30,
-        workdays: Iterable[int] = (0,1,2,3,4),  # 0=Mon ... 6=Sun
+        workdays: Iterable[int] = (0, 1, 2, 3, 4),  # 0=Mon ... 6=Sun
         now: Optional[datetime] = None,
     ) -> None:
         self.list_columns_initial = list(list_columns_initial or [])
         # mapa de durações para colunas de FIM (minúsculas)
-        self.list_columns_final: Dict[str, Tuple[int,int]] = {
+        self.list_columns_final: Dict[str, Tuple[int, int]] = {
             'cortefim': (4, 30),
             'customizacaofim': (5, 26),
             'coladeirafim': (4, 9),
@@ -33,9 +36,9 @@ class Generator:
         }
         self.work_start_h = work_start_h
         self.work_start_m = work_start_m
-        self.work_end_h   = work_end_h
-        self.work_end_m   = work_end_m
-        self.workdays     = set(workdays)
+        self.work_end_h = work_end_h
+        self.work_end_m = work_end_m
+        self.workdays = set(workdays)
         self.current_dt: datetime = now or datetime.today()
 
     # --- API principal (strings in/out para manter compatibilidade) ---
@@ -70,7 +73,7 @@ class Generator:
 
             # (re)define limites do expediente PARA O DIA ATUAL
             day_start = dt.replace(hour=self.work_start_h, minute=self.work_start_m, second=0, microsecond=0)
-            day_end   = dt.replace(hour=self.work_end_h,   minute=self.work_end_m,   second=0, microsecond=0)
+            day_end = dt.replace(hour=self.work_end_h, minute=self.work_end_m, second=0, microsecond=0)
 
             # garante dt >= início do expediente
             if dt < day_start:
@@ -92,7 +95,7 @@ class Generator:
 
     def _normalize_to_business_window(self, dt: datetime, move_to_next_if_after: bool = False) -> datetime:
         day_start = dt.replace(hour=self.work_start_h, minute=self.work_start_m, second=0, microsecond=0)
-        day_end   = dt.replace(hour=self.work_end_h,   minute=self.work_end_m,   second=0, microsecond=0)
+        day_end = dt.replace(hour=self.work_end_h, minute=self.work_end_m, second=0, microsecond=0)
 
         # fim de semana -> vai para próximo dia útil 07:30
         if dt.weekday() not in self.workdays:

@@ -1,13 +1,10 @@
-from typing import Literal, Tuple, Dict
-import pandas as pd
-import streamlit as st
-from supabase import create_client, Client
-from dash_projetos import data_inicial, data_final
 import logging
+from typing import Dict, Literal, Tuple
 
-# -------------------------------------------------------------------
-# LOGGING BÁSICO
-# -------------------------------------------------------------------
+import pandas as pd
+
+from dashboard.data.producao_repository import ProducaoJoinRepository
+
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logger.setLevel(logging.INFO)
@@ -17,77 +14,31 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 
-# -------------------------------------------------------------------
-# SERVIÇO PRINCIPAL
-# -------------------------------------------------------------------
-class ProducaoService:
-    def __init__(self):
-        # Aqui você pode injetar configs depois, se quiser
-        self.cli = self._create_supabase_client()
+class ProducaoStatsService:
+    """Calcula durações de etapas de produção e estatísticas agregadas por período (aba Estatística)."""
 
-    # -------- SUPABASE --------
-    def _create_supabase_client(self) -> Client:
-        sb = st.secrets.get("supabase", {})
-        url = sb.get("url")
-        key = sb.get("key")
+    COLUNAS_DATA = [
+        'corteinicio', 'cortefim',
+        'customizacaoinicio', 'customizacaofim',
+        'coladeirainicio', 'coladeirafim',
+        'usinageminicio', 'usinagemfim',
+        'montageminicio', 'montagemfim',
+        'paineisinicio', 'paineisfim',
+        'embalageminicio', 'embalagemfim',
+    ]
 
-        if not url or not key:
-            raise RuntimeError("Configure SUPABASE_URL e SUPABASE_KEY em st.secrets['supabase'].")
+    def __init__(self) -> None:
+        self._repository = ProducaoJoinRepository()
 
-        logger.info("Conectando ao Supabase...")
-        return create_client(url, key)
-
+    # -------- CARGA / TRANSFORMAÇÕES --------
     def load_raw_data(self) -> pd.DataFrame:
-        """Lê dados crus do Supabase e faz o JOIN."""
-        cols_proj = [
-            "ordemdecompra","cliente","contrato","datacontrato","dataassinatura",
-            "chegoufabrica","dataentrega","iniciado","pronto","entrega",
-            "valorbruto","valornegociado"
-        ]
-        cols_prod = [
-            "ordemdecompra",
-            "corteinicio","cortefim",
-            "customizacaoinicio","customizacaofim",
-            "coladeirainicio","coladeirafim",
-            "usinageminicio","usinagemfim",
-            "montageminicio","montagemfim",
-            "paineisinicio","paineisfim",
-            "embalageminicio","embalagemfim"
-        ]
-
         logger.info("Buscando dados de tblProjetos e tblProducao...")
-        df_proj = pd.DataFrame(
-            self.cli.table("tblProjetos").select(",".join(cols_proj)).execute().data or []
-        )
-        df_prod = pd.DataFrame(
-            self.cli.table("tblProducao").select(",".join(cols_prod)).execute().data or []
-        )
-
-        if df_proj.empty or df_prod.empty:
-            logger.warning("Alguma das tabelas voltou vazia.")
-            return pd.DataFrame(columns=cols_proj + cols_prod[1:])
-
-        df = df_prod.merge(df_proj, on="ordemdecompra", how="inner")
-
-        # Mantém compatibilidade com 'OrdemdeCompra' se o restante do código usar
-        if "ordemdecompra" in df.columns and "OrdemdeCompra" not in df.columns:
-            df["OrdemdeCompra"] = df["ordemdecompra"]
-
+        df = self._repository.fetch_joined()
         logger.info(f"Total de registros após JOIN: {len(df)}")
         return df
 
-    # -------- TRANSFORMAÇÕES --------
     def convert_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        cols_data = [
-            'corteinicio','cortefim',
-            'customizacaoinicio','customizacaofim',
-            'coladeirainicio','coladeirafim',
-            'usinageminicio','usinagemfim',
-            'montageminicio','montagemfim',
-            'paineisinicio','paineisfim',
-            'embalageminicio','embalagemfim',
-        ]
-        for col in cols_data:
+        for col in self.COLUNAS_DATA:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
         return df
@@ -97,7 +48,7 @@ class ProducaoService:
         df_ = pd.to_datetime(fim)
         mask = (
             (pd.to_datetime(df["corteinicio"]) >= di) &
-            (pd.to_datetime(df["cortefim"])   <= df_)
+            (pd.to_datetime(df["cortefim"]) <= df_)
         )
         df_filtrado = df[mask].copy()
         logger.info(f"Registros após filtro de período: {len(df_filtrado)}")
@@ -112,11 +63,13 @@ class ProducaoService:
         min_final = 30
 
         jornada_inicio = pd.Timestamp(1900, 1, 1, hour_inicio, min_inicio)
-        jornada_fim    = pd.Timestamp(1900, 1, 1, hour_final, min_final)
+        jornada_fim = pd.Timestamp(1900, 1, 1, hour_final, min_final)
 
         def ajustar(data: pd.Timestamp):
-            if pd.isnull(data): return None
-            if data.weekday() >= 5: return None
+            if pd.isnull(data):
+                return None
+            if data.weekday() >= 5:
+                return None
             if data.time() < jornada_inicio.time():
                 data = data.replace(hour=hour_inicio, minute=min_inicio)
             elif data.time() > jornada_fim.time():
@@ -124,7 +77,7 @@ class ProducaoService:
             return data
 
         inicio = ajustar(inicio)
-        fim    = ajustar(fim)
+        fim = ajustar(fim)
         if not inicio or not fim:
             return 0
 
@@ -172,20 +125,20 @@ class ProducaoService:
         return df
 
     # -------- ESTATÍSTICAS --------
-    def calcular_estatisticas(self, df: pd.DataFrame) :
+    def calcular_estatisticas(self, df: pd.DataFrame):
         total_projetos = df["ordemdecompra"].nunique() if "ordemdecompra" in df.columns else len(df)
 
         def _safe_mean(series: pd.Series) -> float:
             return series.sum() / total_projetos if total_projetos else 0.0
 
         medias_dec = {
-            "corte":        _safe_mean(df["DuraçãocorteHoras"]),
+            "corte": _safe_mean(df["DuraçãocorteHoras"]),
             "customizacao": _safe_mean(df["DuraçãocustomizacaoHoras"]),
-            "coladeira":    _safe_mean(df["DuraçãocoladeiraHoras"]),
-            "usinagem":     _safe_mean(df["DuraçãousinagemHoras"]),
-            "montagem":     _safe_mean(df["DuraçãomontagemHoras"]),
-            "paineis":      _safe_mean(df["DuraçãopaineisHoras"]),
-            "embalagem":    _safe_mean(df["DuraçãoembalagemHoras"]),
+            "coladeira": _safe_mean(df["DuraçãocoladeiraHoras"]),
+            "usinagem": _safe_mean(df["DuraçãousinagemHoras"]),
+            "montagem": _safe_mean(df["DuraçãomontagemHoras"]),
+            "paineis": _safe_mean(df["DuraçãopaineisHoras"]),
+            "embalagem": _safe_mean(df["DuraçãoembalagemHoras"]),
         }
 
         medias_hhmm = {k: self.decimal_to_hours(v) for k, v in medias_dec.items()}
@@ -204,11 +157,7 @@ class ProducaoService:
         return df_medias, medias_dec, medias_hhmm
 
     # -------- PIPELINE COMPLETO --------
-    def run_pipeline(
-        self,
-        inicio: str,
-        fim: str,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict, Dict]:
+    def run_pipeline(self, inicio: str, fim: str) -> Tuple[pd.DataFrame, pd.DataFrame, Dict, Dict]:
         """
         Executa o fluxo completo com dados SEMPRE atualizados:
         - lê Supabase
@@ -225,25 +174,5 @@ class ProducaoService:
         return df_filtrado, df_medias, medias_dec, medias_hhmm
 
 
-def main():
-    st.title("Dashboard de Produção")
-
-    service = ProducaoService()
-
-    # Exemplo usando as datas do módulo dash_projetos
-    df, df_medias, medias_dec, medias_hhmm = service.run_pipeline(
-        data_inicial, data_final
-    )
-
-    st.subheader("Dados filtrados")
-    st.dataframe(df)
-
-    st.subheader("Médias por etapa")
-    st.dataframe(df_medias)
-
-    st.write("Médias em decimal:", medias_dec)
-    st.write("Médias em hh:mm:", medias_hhmm)
-
-
 if __name__ == "__main__":
-    main()
+    print(ProducaoStatsService.calcular_duracao_trabalhada('2026-01-01T07:30', '2026-01-01T07:31'))
